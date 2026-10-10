@@ -327,3 +327,7 @@ ui-debug.log*
 .env
 .env.*
 !.env.example
+
+# Local agent instructions.
+/AGENTS.md
+/agents.md

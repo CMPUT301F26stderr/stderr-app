@@ -37,9 +37,10 @@ CI applies file checks to the PR/push diff and scans the entire checkout for sec
 - Use a Conventional Commit PR title such as `feat(lottery): add waitlist joining`; working commits can remain flexible.
 - Link its issue with `Closes #123` when merging will complete the issue.
 - Run `bash scripts/check.sh`, or the equivalent Gradle command in the README. Report checks you could not run and why.
+- For repository configuration changes, also run `nix develop .#repository --command bash scripts/check-repository.sh`.
 - Include screenshots for visible UI changes and update affected wiki guidance or diagrams.
 - Request at least one teammate's review. Human review remains required when AI review is added.
-- Resolve feedback and get passing required checks before merging. Use squash merge for a concise main-branch history.
+- Resolve feedback and get a passing `CI ready` status before merging. It requires Repository checks, Pre-commit checks, and Android checks to succeed. Use squash merge for a concise main-branch history.
 
 ## Done means
 

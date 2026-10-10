@@ -45,7 +45,13 @@ Detailed team documentation belongs in the wiki. Keep executable configuration, 
 
 ## Automation
 
-CI checks pull requests and pushes to `main` with the shared pre-commit hooks and Android checks. File checks cover changed files; secret scanning covers the checkout. Manual CI runs audit all tracked files. The manual **Internal release** workflow runs the Android checks on `main` and uploads a debug APK as an Actions artifact for team testing. It does not publish a store release.
+CI runs Repository checks, Pre-commit checks, and Android checks on pull requests and pushes to `main`. The **CI ready** status passes only when all three succeed; require it in branch protection. File checks cover changed files; secret scanning covers the checkout. Manual CI runs audit all tracked files. Both CI and the manual **Internal release** workflow upload debug APKs after their Android checks pass, along with check reports even when checks fail. Download these artifacts from each workflow run's summary; they are retained for 14 days. Internal releases run on `main` and do not publish a store release. All workflow jobs use Linux x64 self-hosted runners; a matching runner must be registered and online.
+
+Run repository-tooling validation locally with:
+
+```bash
+nix develop .#repository --command bash scripts/check-repository.sh
+```
 
 AI review and Firebase integration are pending. See [repository setup](.github/README.md) for the remaining GitHub configuration and wiki setup.
 

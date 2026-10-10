@@ -6,6 +6,10 @@ on:
 permissions:
   contents: read
 
+env:
+  NIX_CONFIG: |
+    experimental-features = nix-command flakes
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -13,7 +17,7 @@ concurrency:
 jobs:
   internal-build:
     name: Internal debug APK
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 30
     steps:
       - name: Require main branch
@@ -25,21 +29,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Set up Java
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
-        with:
-          distribution: temurin
-          # Match gradle/gradle-daemon-jvm.properties.
-          java-version: '25'
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
-      - name: Install compile SDK
-        # Match app/build.gradle.kts.
-        run: sdkmanager 'platforms;android-37'
+      - name: Expose Nix tools to Gradle setup
+        run: nix develop .#default --no-update-lock-file --command bash scripts/setup-ci-toolchain.sh
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@07d1f8453baaff67fb503883367f8b13e6158a54 # v6
+        with:
+          cache-overwrite-existing: true
       - name: Lint, test, and build
-        run: bash scripts/check.sh --stacktrace
+        run: nix develop .#default --no-update-lock-file --command bash scripts/check.sh --stacktrace
       - name: Record build commit
         run: |
           printf '%s\n' "$GITHUB_SHA" > app/build/outputs/apk/debug/COMMIT.txt

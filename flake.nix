@@ -1,7 +1,7 @@
 {
   description = "stderr-app development environment";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
   outputs = { nixpkgs, ... }:
     let
@@ -14,6 +14,26 @@
           android_sdk.accept_license = true;
         };
       };
+
+      # Keep the shared hook runner version when using stable nixpkgs.
+      preCommit = pkgs.pre-commit.overridePythonAttrs (_: {
+        version = "4.6.2";
+        src = pkgs.fetchFromGitHub {
+          owner = "pre-commit";
+          repo = "pre-commit";
+          tag = "v4.6.2";
+          hash = "sha256-aCEN9dVz/3lB2gy7U+6dVj3jSM7cmVsstOp+LHvYRsU=";
+        };
+        # The upstream suite provisions unrelated language toolchains.
+        # Validate the configured hooks with the project checks instead.
+        doCheck = false;
+        doInstallCheck = false;
+        dontUsePytestCheck = true;
+        nativeCheckInputs = [ ];
+        nativeInstallCheckInputs = [ ];
+        preCheck = "";
+        postCheck = "";
+      });
 
       android = pkgs.androidenv.composeAndroidPackages {
         platformVersions = [ "37.0" ];
@@ -43,34 +63,70 @@
       };
     in
     {
-      devShells.${system}.default = pkgs.mkShell {
-        packages = [
-          pkgs.jdk25
-          android.androidsdk
-          pkgs.bash
-          pkgs.git
-          pkgs.gh
-          pkgs.direnv
-          pkgs.actionlint
-          pkgs.shellcheck
-          pkgs.pre-commit
-          pkgs.python3
-          pkgs.go
-          pkgs.gitleaks
-          ktfmt
-        ];
+      devShells.${system} = {
+        default = pkgs.mkShell {
+          packages = [
+            pkgs.jdk25
+            android.androidsdk
+            pkgs.bash
+            pkgs.git
+            pkgs.gnutar
+            pkgs.zstd
+            pkgs.gh
+            pkgs.openssh
+            pkgs.direnv
+            pkgs.actionlint
+            pkgs.shellcheck
+            preCommit
+            pkgs.python3
+            pkgs.go
+            pkgs.gitleaks
+            ktfmt
+          ];
 
-        JAVA_HOME = pkgs.jdk25.home;
-        ANDROID_HOME = sdk;
+          JAVA_HOME = pkgs.jdk25.home;
+          ANDROID_HOME = sdk;
 
-        # Use the Nix-patched executable rather than the Maven binary on NixOS.
-        GRADLE_OPTS =
-          "-Dorg.gradle.project.android.aapt2FromMavenOverride="
-          + "${sdk}/build-tools/37.0.0/aapt2";
+          # Use the Nix-patched executable rather than the Maven binary on NixOS.
+          GRADLE_OPTS =
+            "-Dorg.gradle.project.android.aapt2FromMavenOverride="
+            + "${sdk}/build-tools/37.0.0/aapt2";
 
-        shellHook = ''
-          export PATH="${sdk}/platform-tools:$PATH"
-        '';
+          shellHook = ''
+            export PATH="${sdk}/platform-tools:$PATH"
+          '';
+        };
+
+        # Hook checks need Python, Go, and Java, but not the Android SDK.
+        hooks = pkgs.mkShell {
+          packages = [
+            pkgs.bash
+            pkgs.git
+            pkgs.gnutar
+            pkgs.zstd
+            preCommit
+            pkgs.python3
+            pkgs.go
+            pkgs.jdk25
+            pkgs.gitleaks
+            ktfmt
+          ];
+
+          JAVA_HOME = pkgs.jdk25.home;
+        };
+
+        # Repository validation does not need the Android SDK or app toolchain.
+        repository = pkgs.mkShell {
+          packages = [
+            pkgs.bash
+            pkgs.git
+            pkgs.gh
+            pkgs.openssh
+            pkgs.actionlint
+            pkgs.shellcheck
+            preCommit
+          ];
+        };
       };
     };
 }

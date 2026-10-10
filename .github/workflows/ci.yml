@@ -9,14 +9,32 @@ on:
 permissions:
   contents: read
 
+# The self-hosted NixOS runner already provides Nix. Enable features for
+# workflow commands and nested Nix calls without changing the host config.
+env:
+  NIX_CONFIG: |
+    experimental-features = nix-command flakes
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  repository:
+    name: Repository checks
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Validate repository configuration
+        run: nix develop .#repository --no-update-lock-file --command bash scripts/check-repository.sh
+
   hooks:
     name: Pre-commit checks
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 15
     steps:
       - name: Check out repository
@@ -24,52 +42,52 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - name: Expose Nix tools to caching actions
+        run: nix develop .#hooks --no-update-lock-file --command bash scripts/setup-ci-toolchain.sh
+      - name: Compute hook cache fingerprint
+        id: hook-cache
+        # Avoid hashFiles(), which requires the runner's bundled Node 20.
+        run: |
+          fingerprint="$(sha256sum flake.lock flake.nix .pre-commit-config.yaml | sha256sum)"
+          printf 'hash=%s\n' "${fingerprint%% *}" >> "$GITHUB_OUTPUT"
+      - name: Cache hook environments
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          python-version: '3.13'
-      - name: Set up Java for ktfmt
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
-        with:
-          distribution: temurin
-          java-version: '25'
-      - name: Install pre-commit
-        run: python -m pip install pre-commit==4.6.2
+          path: ${{ runner.temp }}/pre-commit
+          # Hook virtual environments contain absolute paths and Nix references.
+          key: pre-commit-${{ runner.os }}-${{ runner.arch }}-${{ runner.name }}-${{ steps.hook-cache.outputs.hash }}
       - name: Run shared hooks
         env:
+          PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit
           BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_REF: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          if [[ -n "$BASE_REF" && "$BASE_REF" != 0000000000000000000000000000000000000000 ]]; then
-            pre-commit run --hook-stage manual --from-ref "$BASE_REF" --to-ref "$HEAD_REF" --show-diff-on-failure
-          else
-            pre-commit run --hook-stage manual --all-files --show-diff-on-failure
-          fi
+        run: nix develop .#hooks --no-update-lock-file --command bash scripts/check-hooks.sh
 
   android:
     name: Android checks
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Set up Java
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
-        with:
-          distribution: temurin
-          # Match gradle/gradle-daemon-jvm.properties.
-          java-version: '25'
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
-      - name: Install compile SDK
-        # Match app/build.gradle.kts.
-        run: sdkmanager 'platforms;android-37'
+      - name: Expose Nix tools to Gradle setup
+        run: nix develop .#default --no-update-lock-file --command bash scripts/setup-ci-toolchain.sh
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@07d1f8453baaff67fb503883367f8b13e6158a54 # v6
+        with:
+          # Self-hosted runners retain Gradle's home between jobs.
+          cache-overwrite-existing: true
       - name: Lint, test, and build
-        run: bash scripts/check.sh --stacktrace
+        run: nix develop .#default --no-update-lock-file --command bash scripts/check.sh --stacktrace
+      - name: Upload CI APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ci-debug-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
       - name: Upload check reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -80,6 +98,26 @@ jobs:
             app/build/test-results/
           if-no-files-found: warn
           retention-days: 14
+
+  ready:
+    name: CI ready
+    needs: [repository, hooks, android]
+    if: ${{ always() }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 5
+    steps:
+      - name: Require every verification job to succeed
+        env:
+          REPOSITORY_RESULT: ${{ needs.repository.result }}
+          HOOKS_RESULT: ${{ needs.hooks.result }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+        run: |
+          printf 'Repository checks: %s\nPre-commit checks: %s\nAndroid checks: %s\n' \
+            "$REPOSITORY_RESULT" "$HOOKS_RESULT" "$ANDROID_RESULT"
+          if [[ "$REPOSITORY_RESULT" != success || "$HOOKS_RESULT" != success || "$ANDROID_RESULT" != success ]]; then
+            echo 'CI is not ready: every verification job must succeed.' >&2
+            exit 1
+          fi
 
   # AI review is pending provider selection. Add an independent advisory job
   # here when configured; do not replace the Android checks or human review.
