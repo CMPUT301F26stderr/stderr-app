@@ -315,3 +315,15 @@ result-*
 
 # Ignore NixOS interactive test driver history
 **/.nixos-test-history
+
+# The Gradle wrapper JAR is required for builds from a fresh clone.
+!gradle/wrapper/gradle-wrapper.jar
+
+# Firebase CLI local state and local environment secrets.
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+.env
+.env.*
+!.env.example

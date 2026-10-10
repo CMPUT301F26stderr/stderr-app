@@ -1,0 +1,12 @@
+# Assign actual owners after the team agrees on responsibilities.
+# Use GitHub usernames from doc/team.txt; owners need repository write access.
+# Add a primary owner and backup reviewer to each active entry.
+# These examples are comments, so no automatic review requests are configured yet.
+#
+# /.github/       @PRIMARY_OWNER @BACKUP_REVIEWER
+# /scripts/       @PRIMARY_OWNER @BACKUP_REVIEWER
+# /gradle/        @PRIMARY_OWNER @BACKUP_REVIEWER
+# /*.gradle.kts   @PRIMARY_OWNER @BACKUP_REVIEWER
+# /firebase/     @PRIMARY_OWNER @BACKUP_REVIEWER
+#
+# Add feature-specific app paths when those packages exist.

@@ -1,0 +1,31 @@
+name: Bug
+description: Report incorrect application or tooling behavior.
+title: "[Bug] "
+body:
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include enough detail for another teammate to reproduce the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include relevant logs or screenshots, without credentials or personal data.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: App commit or build, device/emulator, Android version, or development OS.
+    validations:
+      required: true

@@ -1,0 +1,46 @@
+minimum_pre_commit_version: '4.6.2'
+default_install_hook_types: [pre-commit]
+default_stages: [pre-commit, manual]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+        args: [--assume-in-merge]
+      - id: check-added-large-files
+        args: [--maxkb=1024, --enforce-all]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # v8.30.1
+    hooks:
+      - id: gitleaks
+        name: Scan staged changes for secrets
+        entry: gitleaks git --pre-commit --redact --staged --no-banner
+        stages: [pre-commit]
+      - id: gitleaks
+        alias: gitleaks-checkout
+        name: Scan checkout for secrets
+        entry: gitleaks dir --redact --no-banner
+        stages: [manual]
+        always_run: true
+
+  - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
+    rev: 4380fbb73a154b5f5624794c1c78d9719ccc860f # v2.16.0
+    hooks:
+      - id: pretty-format-kotlin
+        name: Check Kotlin formatting (ktfmt, Kotlin style)
+        args:
+          - --ktfmt
+          - --ktfmt-version=0.64
+          - --ktfmt-style=kotlinlang
+          - --formatter-jar-checksum=5b3d5286fd2defcc7dc8e28c21ddf156cc6b2d8682bdcd929ce4333e7a6201f2
+        # Check only. Format deliberately in the IDE or with ktfmt, then stage.
+        types: [file]
+        files: '\.(kt|kts)$'

@@ -1,0 +1,64 @@
+name: Internal release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  internal-build:
+    name: Internal debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Require main branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo 'Run Internal release from the main branch.' >&2
+          exit 1
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Java
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: temurin
+          # Match gradle/gradle-daemon-jvm.properties.
+          java-version: '25'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+      - name: Install compile SDK
+        # Match app/build.gradle.kts.
+        run: sdkmanager 'platforms;android-37'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@07d1f8453baaff67fb503883367f8b13e6158a54 # v6
+      - name: Lint, test, and build
+        run: bash scripts/check.sh --stacktrace
+      - name: Record build commit
+        run: |
+          printf '%s\n' "$GITHUB_SHA" > app/build/outputs/apk/debug/COMMIT.txt
+      - name: Upload internal APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: internal-debug-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/debug/COMMIT.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload check reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: internal-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          if-no-files-found: warn
+          retention-days: 14

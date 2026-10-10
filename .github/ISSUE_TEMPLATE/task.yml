@@ -1,0 +1,24 @@
+name: Team or infrastructure task
+description: Track setup, documentation, design, or maintenance work.
+title: "[Task] "
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal and scope
+      description: Describe the deliverable and which files or tools it affects.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Describe how the team can verify that this task is complete.
+      placeholder: "- [ ] ..."
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: Dependencies and references
+      description: Link related issues, user stories, or wiki pages.
