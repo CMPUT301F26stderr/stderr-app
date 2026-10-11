@@ -334,3 +334,89 @@ The following user stories were present in HTML comments in the original documen
 
 - **US 03.09.01:** As an admin, I want to remove campsite ratings that violate app policy.
 - **US 03.10.01:** As an admin, I want to remove campsite reviews that violate app policy.
+
+---
+
+# Q and A
+
+## Lottery and Booking
+
+### 1. Lottery Draws
+
+**Question:** Should the system draw automatically when registration closes, should the owner trigger it, or should both be supported? Must automatic draws work when nobody has the app open?
+
+**Answer:** I would recommend supporting both. Support automatic draws, with owner triggering as a fallback. I believe supporting automatic draws when the app isn't open is out of scope for this project, but feel free to implement it if you want.
+
+### 2. Booking Access
+
+**Question:** Is campsite booking restricted to lottery winners, with first-come-first-served booking among those winners?
+
+**Answer:** Yes.
+
+### 3. Booking Period
+
+**Question:** Does this mean the window when winners can make reservations, the dates available for their stay, or two separately configured periods?
+
+**Answer:** Booking period means the period that winners can choose the dates they want to reserve, on a first-come, first-served basis.
+
+### 4. Winning Entitlement
+
+**Question:** Does each win allow exactly one reservation at one campsite, potentially covering multiple consecutive nights?
+
+**Answer:** Yes. 1 win = 1 campsite reservation. This reservation can be reserved for multiple days, as long as those days are available. It up to you if you want to support consecutive-only nights.
+
+### 5. Declines and Deadlines
+
+**Question:** How long do winners have to book? When someone declines or their opportunity expires, should the system select a replacement?
+
+**Answer:** Owners decide the booking period. Replacement? That is up to you.
+
+### 6. Campsite Capacity
+
+**Question:** Does a reservation book the entire campsite, with maximum occupancy limiting the group, or can multiple groups reserve the same campsite for the same dates?
+
+**Answer:** I would say 1 group per campsite. Unless you want to make it more complicated.
+
+### 7. Overlapping Lotteries
+
+**Question:** Can the same campsite and stay dates appear in multiple active lotteries? Can an entrant participate in those lotteries simultaneously?
+
+**Answer:** That is up to you.
+
+### 8. Lottery Modifications
+
+**Question:** What may an owner change after entrants have joined or winners have been selected? How should changes affect existing entries and booking opportunities?
+
+**Answer:** That is up to you.
+
+## Identity and Roles
+
+### 9. Identity
+
+**Question:** We plan to use email/password login. Is that an acceptable replacement for US 01.09.01, which specifies device identification without a username and password?
+
+**Answer:** No. We ask for device identification without a username and password.
+
+### 10. Roles
+
+**Question:** Can users make themselves campsite owners? How should administrator access be assigned, and can ordinary accounts hold both entrant and owner roles?
+
+**Answer:** They can, yes - this is one way of interpreting it. One way to do admin access is that, for users, there's an admin boolean, and you manually set it for users you'd like to give admin access. For each user type, have a different UI view for each.
+
+## Cancellation and Images
+
+### 11. Cancellation and Removal
+
+**Question:** What should happen to active lotteries, winning opportunities, reservations, and historical records when an owner rejects a reservation or an admin removes a campsite, owner, or profile? We plan to simulate payments and refunds.
+
+**Answer:** Simulating payments and refunds is a good way to handle it.
+
+### 12. Profile Images
+
+**Question:** The feature list includes entrant image uploads, but the image-management story is archived. We plan to support uploading, replacing, and removing profile images—is that consistent with the intended requirements?
+
+**Answer:** I'm not 100% sure what you mean by the image-management story being archived, but what you listed is consistent.
+
+## General Guidance
+
+Very good questions! When I say "that is up to you", it is because the user stories do not encapsulate everything, so those "gaps" are what you, as a team, can decide how to handle. If you are still struggling to come up with maybe some way to handle them, feel free to ask me more clarifying questions like you just did. Hopefully I was able to answer your questions :)
