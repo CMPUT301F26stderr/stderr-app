@@ -35,12 +35,21 @@ repos:
     rev: 4380fbb73a154b5f5624794c1c78d9719ccc860f # v2.16.0
     hooks:
       - id: pretty-format-kotlin
-        name: Check Kotlin formatting (ktfmt, Kotlin style)
+        alias: ktlint-format
+        name: Format Kotlin (ktlint)
         args:
-          - --ktfmt
-          - --ktfmt-version=0.64
-          - --ktfmt-style=kotlinlang
-          - --formatter-jar-checksum=5b3d5286fd2defcc7dc8e28c21ddf156cc6b2d8682bdcd929ce4333e7a6201f2
-        # Check only. Format deliberately in the IDE or with ktfmt, then stage.
+          - --ktlint-version=1.8.0
+          - --formatter-jar-checksum=a3fd620207d5c40da6ca789b95e7f823c54e854b7fade7f613e91096a3706d75
+          - --autofix
+        stages: [pre-commit]
+        types: [file]
+        files: '\.(kt|kts)$'
+      - id: pretty-format-kotlin
+        alias: ktlint-check
+        name: Check Kotlin formatting (ktlint)
+        args:
+          - --ktlint-version=1.8.0
+          - --formatter-jar-checksum=a3fd620207d5c40da6ca789b95e7f823c54e854b7fade7f613e91096a3706d75
+        stages: [manual]
         types: [file]
         files: '\.(kt|kts)$'

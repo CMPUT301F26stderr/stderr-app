@@ -4,9 +4,9 @@ Detailed workflow and responsibilities live in the [team wiki](https://github.co
 
 ## Install local hooks
 
-Run `nix develop` to enter the development shell. It includes pre-commit, Python, Go, Java, Gitleaks, and ktfmt. The `ktfmt` command uses the same pinned version and four-space Kotlin style as the hooks. Pre-commit manages its own hook environments, so the first installation still downloads their dependencies.
+Run `nix develop` to enter the development shell. It includes pre-commit, Python, Go, Java, Gitleaks, and ktlint 1.8.0. The formatter and hooks use the shared `.editorconfig`: four-space indentation, a 100-character column limit, and expression bodies on a separate line. Pre-commit manages its own hook environments, so the first installation still downloads their dependencies.
 
-Without Nix, install the pinned runner with `uv tool install pre-commit==4.6.2` (or `pipx install pre-commit==4.6.2`). Make Java available on `PATH` for Kotlin checks; the project's JDK 25 works.
+Without Nix, install the pinned runner with `uv tool install pre-commit==4.6.2` (or `pipx install pre-commit==4.6.2`). Make Java available on `PATH` for Kotlin checks; the project's JDK 25 works. For the format command, install [ktlint 1.8.0](https://github.com/ktlint/ktlint/releases/tag/1.8.0) on `PATH`; hooks download and verify the same release automatically.
 
 After cloning, run:
 
@@ -14,7 +14,17 @@ After cloning, run:
 pre-commit install --install-hooks
 ```
 
-Hooks check staged files for whitespace, final newlines, valid YAML/JSON/TOML, conflict markers, oversized files (over 1 MiB), secrets, and Kotlin formatting. Markdown hard line breaks are preserved. Whitespace and newline hooks may fix files; review and stage those changes before retrying the commit. Kotlin checks use pinned ktfmt with four-space Kotlin style in check mode; format with the matching IDE formatter and stage the result.
+Hooks check staged files for whitespace, final newlines, valid YAML/JSON/TOML, conflict markers, oversized files (over 1 MiB), secrets, and Kotlin formatting. Markdown hard line breaks are preserved. Whitespace, newline, and Kotlin hooks may fix files; review and stage those changes before retrying the commit. Hooks never stage files automatically. Manual audits and CI check Kotlin without modifying it.
+
+Format all tracked and untracked Kotlin sources and Gradle scripts, excluding ignored build outputs:
+
+```bash
+bash scripts/format-kotlin.sh
+# Check the same files without changing them:
+bash scripts/format-kotlin.sh --check
+```
+
+Use the ktlint integration in Android Studio with the pinned version and shared `.editorconfig`. Disable competing Kotlin formatters. The configuration preserves the existing application namespace, allows Compose component names, and permits the four comment-only integration placeholders; remove the placeholder exception when those files are implemented.
 
 For a full checkout audit, including secrets in files that are not staged:
 
@@ -22,7 +32,7 @@ For a full checkout audit, including secrets in files that are not staged:
 pre-commit run --hook-stage manual --all-files
 ```
 
-CI applies file checks to the PR/push diff and scans the entire checkout for secrets. Manual workflow runs check all tracked files. This allows untouched existing code to adopt formatting as it is changed; a full audit can report older formatting issues. Commit-message validation and pre-push checks are not enabled.
+CI applies file checks to the PR/push diff and scans the entire checkout for secrets. Manual workflow runs check all tracked files. Changes to `.editorconfig` trigger a full tracked-Kotlin formatting check so policy changes are checked across the repository. Commit-message validation and pre-push checks are not enabled.
 
 ## Work on an issue
 

@@ -16,3 +16,18 @@ trim_trailing_whitespace = false
 
 [*.bat]
 end_of_line = crlf
+
+[*.{kt,kts}]
+ktlint_code_style = ktlint_official
+max_line_length = 100
+ktlint_function_signature_body_expression_wrapping = always
+# Compose uses PascalCase for component functions.
+ktlint_function_naming_ignore_when_annotated_with = Composable
+
+[app/src/**/*.kt]
+# Preserve the existing application namespace; renaming it is not formatting.
+ktlint_standard_package-name = disabled
+
+[**/{AppNavigation,Integrations,Components,Controllers}.kt]
+# These files intentionally contain integration TODOs until their features are assigned.
+ktlint_standard_no-empty-file = disabled

@@ -48,17 +48,16 @@
       sdk = "${android.androidsdk}/libexec/android-sdk";
 
       # Match the formatter version and checksum in .pre-commit-config.yaml.
-      # The locked nixpkgs ktfmt package is older than the shared hook version.
-      ktfmtJar = pkgs.fetchurl {
-        url = "https://repo.maven.apache.org/maven2/com/facebook/ktfmt/0.64/ktfmt-0.64-with-dependencies.jar";
-        hash = "sha256-Wz1Shv0t78x9yOKMId3xVsxrLYaCvc2SnOQzPnpiAfI=";
+      ktlintJar = pkgs.fetchurl {
+        url = "https://github.com/ktlint/ktlint/releases/download/1.8.0/ktlint";
+        hash = "sha256-o/1iAgfVxA2myniblef4I8VOhUt/ref2E+kQlqNwbXU=";
       };
 
-      ktfmt = pkgs.writeShellApplication {
-        name = "ktfmt";
+      ktlint = pkgs.writeShellApplication {
+        name = "ktlint";
         runtimeInputs = [ pkgs.jdk25 ];
         text = ''
-          exec java -jar ${ktfmtJar} --kotlinlang-style "$@"
+          exec java --enable-native-access=ALL-UNNAMED -jar ${ktlintJar} "$@"
         '';
       };
     in
@@ -81,7 +80,7 @@
             pkgs.python3
             pkgs.go
             pkgs.gitleaks
-            ktfmt
+            ktlint
           ];
 
           JAVA_HOME = pkgs.jdk25.home;
@@ -109,7 +108,7 @@
             pkgs.go
             pkgs.jdk25
             pkgs.gitleaks
-            ktfmt
+            ktlint
           ];
 
           JAVA_HOME = pkgs.jdk25.home;
