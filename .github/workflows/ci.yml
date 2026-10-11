@@ -81,11 +81,22 @@ jobs:
           cache-overwrite-existing: true
       - name: Lint, test, and build
         run: nix develop .#default --no-update-lock-file --command bash scripts/check.sh --stacktrace
-      - name: Upload CI APK
+      - name: Prepare internal build artifact
+        run: |
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/debug/*.apk)
+          if ((${#apks[@]} == 0)); then
+            echo 'The debug build did not produce an APK.' >&2
+            exit 1
+          fi
+          printf '%s\n' "$GITHUB_SHA" > app/build/outputs/apk/debug/COMMIT.txt
+      - name: Upload internal build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ci-debug-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: app/build/outputs/apk/debug/*.apk
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/debug/COMMIT.txt
           if-no-files-found: error
           retention-days: 14
       - name: Upload check reports
