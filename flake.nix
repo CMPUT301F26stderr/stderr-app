@@ -66,6 +66,7 @@
         default = pkgs.mkShell {
           packages = [
             pkgs.jdk25
+            pkgs.firebase-tools
             android.androidsdk
             pkgs.bash
             pkgs.git
