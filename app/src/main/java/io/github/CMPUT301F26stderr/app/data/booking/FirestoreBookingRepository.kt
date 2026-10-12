@@ -1,0 +1,224 @@
+package io.github.CMPUT301F26stderr.app.data.booking
+
+import com.google.firebase.firestore.FirebaseFirestore
+import io.github.CMPUT301F26stderr.app.data.campsite.CalendarNightDocument
+import io.github.CMPUT301F26stderr.app.data.campsite.CampsiteDocument
+import io.github.CMPUT301F26stderr.app.data.firestore.DocumentKeys
+import io.github.CMPUT301F26stderr.app.data.firestore.FirestorePaths
+import io.github.CMPUT301F26stderr.app.data.firestore.activeAccount
+import io.github.CMPUT301F26stderr.app.data.firestore.atomic
+import io.github.CMPUT301F26stderr.app.data.firestore.cancellation
+import io.github.CMPUT301F26stderr.app.data.firestore.observe
+import io.github.CMPUT301F26stderr.app.data.firestore.read
+import io.github.CMPUT301F26stderr.app.data.firestore.require
+import io.github.CMPUT301F26stderr.app.data.lottery.LotteryDocument
+import io.github.CMPUT301F26stderr.app.data.lottery.LotteryEntryDocument
+import io.github.CMPUT301F26stderr.app.data.lottery.LotteryOfferDocument
+import io.github.CMPUT301F26stderr.app.data.notification.NotificationWrites
+import io.github.CMPUT301F26stderr.app.domain.account.Role
+import io.github.CMPUT301F26stderr.app.domain.booking.AcceptedTerms
+import io.github.CMPUT301F26stderr.app.domain.booking.BookedCampsite
+import io.github.CMPUT301F26stderr.app.domain.booking.BookingPolicy
+import io.github.CMPUT301F26stderr.app.domain.booking.BookingRepository
+import io.github.CMPUT301F26stderr.app.domain.booking.BookingRequest
+import io.github.CMPUT301F26stderr.app.domain.booking.CancellationRequest
+import io.github.CMPUT301F26stderr.app.domain.booking.Payment
+import io.github.CMPUT301F26stderr.app.domain.booking.Reservation
+import io.github.CMPUT301F26stderr.app.domain.booking.ReservationCancellation
+import io.github.CMPUT301F26stderr.app.domain.booking.stayNights
+import io.github.CMPUT301F26stderr.app.domain.lottery.EntryState
+import io.github.CMPUT301F26stderr.app.domain.shared.PersistenceFailure.Reason.ALREADY_USED
+import io.github.CMPUT301F26stderr.app.domain.shared.PersistenceFailure.Reason.CAPACITY_REACHED
+import io.github.CMPUT301F26stderr.app.domain.shared.PersistenceFailure.Reason.CONFLICT
+import io.github.CMPUT301F26stderr.app.domain.shared.PersistenceFailure.Reason.INACTIVE
+import io.github.CMPUT301F26stderr.app.domain.shared.PersistenceFailure.Reason.INVALID_STATE
+import io.github.CMPUT301F26stderr.app.domain.shared.PersistenceFailure.Reason.NOT_ALLOWED
+import io.github.CMPUT301F26stderr.app.domain.shared.PersistenceFailure.Reason.STALE_QUOTE
+import io.github.CMPUT301F26stderr.app.domain.shared.PersistenceFailure.Reason.WINDOW_CLOSED
+import io.github.CMPUT301F26stderr.app.domain.shared.requireOperation
+import kotlinx.coroutines.flow.map
+import java.time.Clock
+import java.time.LocalDate
+
+class FirestoreBookingRepository(
+    private val db: FirebaseFirestore,
+    private val clock: Clock,
+) : BookingRepository {
+    override suspend fun get(id: String) =
+        db.document(FirestorePaths.reservation(id)).read(ReservationDocument)
+
+    override suspend fun getPayment(id: String) =
+        db.document(FirestorePaths.payment(id)).read(PaymentDocument)
+
+    override fun observeForEntrant(entrantId: String) =
+        db
+            .collection("reservations")
+            .whereEqualTo("entrantId", entrantId)
+            .observe(ReservationDocument)
+
+    override fun observeForCampsite(campsiteId: String) =
+        db
+            .collection("reservations")
+            .whereEqualTo("campsiteId", campsiteId)
+            .observe(ReservationDocument)
+
+    override suspend fun reserve(request: BookingRequest): String {
+        val id = DocumentKeys.reservation(request.lotteryId, request.entrantId)
+        val reference = db.document(FirestorePaths.reservation(id))
+        val nights = stayNights(request.checkInDate, request.checkOutDate)
+        db.atomic { tx ->
+            val now = clock.instant()
+            tx.activeAccount(db, request.entrantId, Role.ENTRANT)
+            val previous = tx.read(reference, ReservationDocument)
+            requireOperation(
+                previous == null,
+                ALREADY_USED,
+                "Winning opportunity has already been used",
+            )
+            val lottery =
+                tx.require(db.document(FirestorePaths.lottery(request.lotteryId)), LotteryDocument)
+            tx.activeAccount(db, lottery.ownerId, Role.OWNER)
+            requireOperation(lottery.bookingIsOpen(now), WINDOW_CLOSED, "Booking window is closed")
+            val entry =
+                tx.require(
+                    db.document(FirestorePaths.entry(request.lotteryId, request.entrantId)),
+                    LotteryEntryDocument,
+                )
+            requireOperation(
+                entry.state == EntryState.OFFERED,
+                NOT_ALLOWED,
+                "No unused winning offer",
+            )
+            val offer =
+                tx.require(
+                    db.document(FirestorePaths.offer(request.lotteryId, request.campsiteId)),
+                    LotteryOfferDocument,
+                )
+            requireOperation(
+                offer.nights.containsAll(nights),
+                NOT_ALLOWED,
+                "Dates are not offered by this lottery",
+            )
+            val site =
+                tx.require(
+                    db.document(FirestorePaths.campsite(request.campsiteId)),
+                    CampsiteDocument,
+                )
+            requireOperation(
+                site.isPublished && site.ownerId == lottery.ownerId,
+                INACTIVE,
+                "Campsite unavailable",
+            )
+            requireOperation(
+                request.checkInDate >=
+                    LocalDate.ofInstant(now, java.time.ZoneId.of(site.details.timeZone)),
+                WINDOW_CLOSED,
+                "Stay has already begun",
+            )
+            requireOperation(
+                request.guestCount <= site.details.maxGuests,
+                CAPACITY_REACHED,
+                "Group exceeds campsite capacity",
+            )
+            val total = Math.multiplyExact(site.details.nightlyPriceCents, nights.size.toLong())
+            requireOperation(
+                total == request.expectedTotalCents &&
+                    request.acceptedRules == site.details.rules &&
+                    request.policyVersion == BookingPolicy.VERSION,
+                STALE_QUOTE,
+                "Price or accepted terms have changed",
+            )
+            val references = nights.map { db.document(FirestorePaths.night(site.id, it)) }
+            val inventory = references.map { tx.read(it, CalendarNightDocument) }
+            requireOperation(
+                inventory.all { it?.isFree == true },
+                CONFLICT,
+                "Some nights are no longer free",
+            )
+            val reservation =
+                Reservation(
+                    id,
+                    lottery.id,
+                    request.entrantId,
+                    site.id,
+                    request.checkInDate,
+                    request.checkOutDate,
+                    request.guestCount,
+                    BookedCampsite(
+                        site.details.name,
+                        site.details.locationLabel,
+                        site.details.location,
+                        site.details.timeZone,
+                    ),
+                    AcceptedTerms(request.acceptedRules, request.policyVersion, now),
+                    now,
+                )
+            tx.set(reference, ReservationDocument.encode(reservation))
+            tx.set(
+                db.document(FirestorePaths.payment(id)),
+                PaymentDocument.encode(Payment(id, total, now)),
+            )
+            references.forEach { tx.update(it, "reservationId", id) }
+            NotificationWrites.reservation(db, tx, reservation, false, now)
+        }
+        return id
+    }
+
+    override suspend fun cancel(request: CancellationRequest) {
+        db.atomic { tx ->
+            val actor = tx.activeAccount(db, request.actorId, request.initiatedAs)
+            val ref = db.document(FirestorePaths.reservation(request.reservationId))
+            val reservation = tx.require(ref, ReservationDocument)
+            val site =
+                tx.require(
+                    db.document(FirestorePaths.campsite(reservation.campsiteId)),
+                    CampsiteDocument,
+                )
+            val allowed =
+                when (request.initiatedAs) {
+                    Role.ENTRANT -> actor.id == reservation.entrantId
+                    Role.OWNER -> actor.id == site.ownerId
+                    Role.ADMIN -> true
+                }
+            requireOperation(allowed, NOT_ALLOWED, "Not a participant or administrator")
+            cancelInTransaction(db, tx, reservation, request, clock.instant())
+        }
+    }
+
+    internal companion object {
+        /** Caller has already read and authorized actor/subject; all reads precede writes. */
+        fun cancelInTransaction(
+            db: FirebaseFirestore,
+            tx: com.google.firebase.firestore.Transaction,
+            reservation: Reservation,
+            request: CancellationRequest,
+            now: java.time.Instant,
+        ) {
+            if (reservation.cancellation != null) return
+            val paymentRef = db.document(FirestorePaths.payment(reservation.id))
+            val payment = tx.require(paymentRef, PaymentDocument)
+            val refs =
+                stayNights(reservation.checkInDate, reservation.checkOutDate).map {
+                    db.document(FirestorePaths.night(reservation.campsiteId, it))
+                }
+            val nights = refs.map { tx.require(it, CalendarNightDocument) }
+            requireOperation(
+                nights.all { it.reservationId == reservation.id },
+                INVALID_STATE,
+                "Reservation/calendar mismatch",
+            )
+            val cancellation =
+                ReservationCancellation(now, request.actorId, request.initiatedAs, request.reason)
+            tx.set(
+                db.document(FirestorePaths.reservation(reservation.id)),
+                ReservationDocument.encode(reservation.copy(cancellation = cancellation)),
+            )
+            tx.set(
+                paymentRef,
+                PaymentDocument.encode(payment.copy(refundedAt = payment.refundedAt ?: now)),
+            )
+            refs.forEach { tx.update(it, "reservationId", null) }
+            NotificationWrites.reservation(db, tx, reservation, true, now)
+        }
+    }
+}
