@@ -1,6 +1,6 @@
 # Contributing
 
-Detailed workflow and responsibilities live in the [team wiki](https://github.com/CMPUT301F26stderr/stderr-app/wiki). These are the repository's baseline rules.
+Detailed workflow and responsibilities live in the [team wiki](https://github.com/CMPUT301F26stderr/stderr-campsbridge/wiki). These are the repository's baseline rules.
 
 ## Install local hooks
 

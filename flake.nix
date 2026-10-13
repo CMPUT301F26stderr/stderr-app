@@ -1,5 +1,5 @@
 {
-  description = "stderr-app development environment";
+  description = "stderr-campsbridge development environment";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 

@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "stderr-app"
+rootProject.name = "stderr-campsbridge"
 include(":app")

@@ -81,22 +81,19 @@ jobs:
           cache-overwrite-existing: true
       - name: Lint, test, and build
         run: nix develop .#default --no-update-lock-file --command bash scripts/check.sh --stacktrace
-      - name: Prepare internal build artifact
+      - name: Make cached Gradle launchers executable
+        if: always()
         run: |
-          shopt -s nullglob
-          apks=(app/build/outputs/apk/debug/*.apk)
-          if ((${#apks[@]} == 0)); then
-            echo 'The debug build did not produce an APK.' >&2
-            exit 1
+          gradle_distributions="${GRADLE_USER_HOME:-$HOME/.gradle}/wrapper/dists"
+          if [[ -d "$gradle_distributions" ]]; then
+            find "$gradle_distributions" -type f -path '*/bin/gradle' -exec chmod +x {} +
           fi
-          printf '%s\n' "$GITHUB_SHA" > app/build/outputs/apk/debug/COMMIT.txt
       - name: Upload internal build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: ci-debug-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/debug/COMMIT.txt
+          path: app/build/outputs/apk/debug/app-debug.apk
+          archive: false
+          overwrite: true
           if-no-files-found: error
           retention-days: 14
       - name: Upload check reports

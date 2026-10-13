@@ -1,11 +1,11 @@
-# stderr-app
+# stderr-campsbridge
 
 An Android campsite reservation app for CMPUT 301, built by a team of six. Entrants join campsite lotteries; selected entrants can book available dates. Campsite owners manage listings and reservations, and administrators moderate the app.
 
 ## Team workspace
 
-- [GitHub Wiki](https://github.com/CMPUT301F26stderr/stderr-app/wiki): onboarding, architecture, responsibilities, UI storyboards, decisions, and meeting notes.
-- [Issues](https://github.com/CMPUT301F26stderr/stderr-app/issues): requirements, tasks, bugs, and acceptance criteria.
+- [GitHub Wiki](https://github.com/CMPUT301F26stderr/stderr-campsbridge/wiki): onboarding, architecture, responsibilities, UI storyboards, decisions, and meeting notes.
+- [Issues](https://github.com/CMPUT301F26stderr/stderr-campsbridge/issues): requirements, tasks, bugs, and acceptance criteria.
 - [Projects](https://github.com/orgs/CMPUT301F26stderr/projects): the team's Kanban board.
 - Canva: editable prototypes; keep the design links and exported diagrams in the wiki.
 - [Course requirements](doc/00_requirements.md) and [preparation deliverables](doc/01_prep.md): reference documents.
@@ -43,16 +43,16 @@ The checks run Android Lint, local unit tests, and a debug APK build. Device tes
 
 Detailed team documentation belongs in the wiki. Keep executable configuration, agent instructions, and short contribution rules in this repository.
 
-## Automation
+## Testing
 
-CI runs Repository checks, Pre-commit checks, and Android checks on pull requests and pushes to `main`. The **CI ready** status passes only when all three succeed; require it in branch protection. File checks cover changed files; secret scanning covers the checkout. Manual CI runs audit all tracked files. After Android checks pass, CI automatically uploads an internal debug APK with a `COMMIT.txt` identifying the build commit. Check reports are uploaded even when checks fail. Download these artifacts from the CI run's summary; they are retained for 14 days. CI can also be run manually and does not publish a store release. All workflow jobs use Linux x64 self-hosted runners; a matching runner must be registered and online.
+[![Build status](https://github.com/CMPUT301F26stderr/stderr-campsbridge/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/CMPUT301F26stderr/stderr-campsbridge/actions/workflows/ci.yml?query=branch%3Amain+event%3Apush)
 
-Run repository-tooling validation locally with:
+Download a test APK:
 
-```bash
-nix develop .#repository --command bash scripts/check-repository.sh
-```
+1. Sign in to GitHub and open the build runs using the badge above.
+2. Select the latest successful run on `main`, then find **Artifacts** on its summary page.
+3. Download **app-debug.apk** and open it on your Android device to install it. Allow installation from the app you used to open the APK if Android prompts you.
 
-AI review and Firebase integration are pending. See [repository setup](.github/README.md) for the remaining GitHub configuration and wiki setup.
+Build APKs are available for 14 days after each run. Detailed testing instructions will be added here as features become available.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing. This project uses the [GNU GPL v3 license](LICENSE).

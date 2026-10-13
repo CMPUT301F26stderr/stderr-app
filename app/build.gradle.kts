@@ -1,16 +1,17 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    id("com.google.gms.google-services")
 }
 
 android {
-    namespace = "io.github.CMPUT301F26stderr.app"
+    namespace = "io.github.CMPUT301F26stderr.campsbridge"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "io.github.CMPUT301F26stderr.app"
+        applicationId = "io.github.CMPUT301F26stderr.campsbridge"
         minSdk = 24
         targetSdk = 37
         versionCode = 1
