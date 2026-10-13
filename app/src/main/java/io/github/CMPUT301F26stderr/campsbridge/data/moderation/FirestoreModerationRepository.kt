@@ -70,7 +70,7 @@ class FirestoreModerationRepository(
             )
             enqueue(tx, ImageTarget(ImageTargetType.ACCOUNT, accountId), removal)
         }
-        resumeRemovals()
+        resumeRemovalsFor(actorId)
     }
 
     override suspend fun removeCampsite(
@@ -89,7 +89,7 @@ class FirestoreModerationRepository(
             )
             markSite(tx, site, Removal(clock.instant(), actorId, reason))
         }
-        resumeRemovals()
+        resumeRemovalsFor(actorId)
     }
 
     private fun enqueue(
@@ -113,12 +113,16 @@ class FirestoreModerationRepository(
         enqueue(tx, ImageTarget(ImageTargetType.CAMPSITE, site.id), removal)
     }
 
-    override suspend fun resumeRemovals() {
+    override suspend fun resumeRemovals() =
+        resumeRemovalsFor(null)
+
+    private suspend fun resumeRemovalsFor(actorId: String?) {
         // Account removal may enqueue campsite jobs, so drain until there are no jobs.
         while (true) {
+            val pending = db.collection("_removals")
+            val query = if (actorId == null) pending else pending.whereEqualTo("actorId", actorId)
             val jobs =
-                db
-                    .collection("_removals")
+                query
                     .get(Source.SERVER)
                     .await()
                     .documents
@@ -221,17 +225,13 @@ class FirestoreModerationRepository(
         id: String,
         removal: Removal,
     ) {
-        // Small project dataset: derive memberships from offers, without duplicating campsite IDs.
-        for (
-        offer in
-        db.collectionGroup("offers").get(Source.SERVER).await().documents.filter {
-            it.id == id
-        }
-        ) {
-            val lotteryId =
-                offer.reference.parent.parent!!
-                    .id
-            cancelLottery(lotteryId, removal)
+        // Ownership-scoped reads also work for self-removal; a global offer scan requires admin.
+        val site = db.document(FirestorePaths.campsite(id)).read(CampsiteDocument) ?: return
+        val ownedLotteries =
+            db.collection("lotteries").whereEqualTo("ownerId", site.ownerId).read(LotteryDocument)
+        for (lottery in ownedLotteries) {
+            val offer = db.document(FirestorePaths.offer(lottery.id, id)).get(Source.SERVER).await()
+            if (offer.exists()) cancelLottery(lottery.id, removal)
         }
         for (
         reservation in

@@ -1,6 +1,6 @@
 # Contributing
 
-Detailed workflow and responsibilities live in the [team wiki](https://github.com/CMPUT301F26stderr/stderr-campsbridge/wiki). These are the repository's baseline rules.
+Follow these contribution rules and the workflow and responsibilities recorded in the [team wiki](https://github.com/CMPUT301F26stderr/stderr-campsbridge/wiki).
 
 ## Install local hooks
 
@@ -14,7 +14,7 @@ After cloning, run:
 pre-commit install --install-hooks
 ```
 
-Hooks check staged files for whitespace, final newlines, valid YAML/JSON/TOML, conflict markers, oversized files (over 1 MiB), secrets, and Kotlin formatting. Markdown hard line breaks are preserved. Whitespace, newline, and Kotlin hooks may fix files; review and stage those changes before retrying the commit. Hooks never stage files automatically. Manual audits and CI check Kotlin without modifying it.
+Hooks check staged files for whitespace, final newlines, valid YAML/JSON/TOML, conflict markers, oversized files (over 1 MiB), secrets, and Kotlin formatting. Markdown hard line breaks are preserved. Whitespace, newline, and Kotlin hooks may fix files; review and stage those changes before retrying the commit. Hooks never stage files automatically. Manual audits check Kotlin without modifying it. CI omits formatting, whitespace, and final-newline checks.
 
 Format all tracked and untracked Kotlin sources and Gradle scripts, excluding ignored build outputs:
 
@@ -24,7 +24,7 @@ bash scripts/format-kotlin.sh
 bash scripts/format-kotlin.sh --check
 ```
 
-Use the ktlint integration in Android Studio with the pinned version and shared `.editorconfig`. Disable competing Kotlin formatters. The configuration preserves the existing application namespace, allows Compose component names, and permits the four comment-only integration placeholders; remove the placeholder exception when those files are implemented.
+Use the ktlint integration in Android Studio with the pinned version and shared `.editorconfig`. Disable competing Kotlin formatters. Compose component names are allowed. Remove the comment-only file exceptions from `.editorconfig` when the corresponding integration files are implemented.
 
 For a full checkout audit, including secrets in files that are not staged:
 
@@ -32,7 +32,7 @@ For a full checkout audit, including secrets in files that are not staged:
 pre-commit run --hook-stage manual --all-files
 ```
 
-CI applies file checks to the PR/push diff and scans the entire checkout for secrets. Manual workflow runs check all tracked files. Changes to `.editorconfig` trigger a full tracked-Kotlin formatting check so policy changes are checked across the repository. Commit-message validation and pre-push checks are not enabled.
+CI checks YAML/JSON/TOML syntax, conflict markers, and file size in the PR/push diff, and scans the entire checkout for secrets. Manual workflow runs check all tracked files. Run the same checks with `nix develop .#hooks --command bash scripts/check-hooks.sh`; the Nix shell supplies the check implementations directly. Automatic PR formatting, commit-message validation, and pre-push checks are not enabled.
 
 ## Work on an issue
 
@@ -47,7 +47,7 @@ CI applies file checks to the PR/push diff and scans the entire checkout for sec
 - Use a Conventional Commit PR title such as `feat(lottery): add waitlist joining`; working commits can remain flexible.
 - Link its issue with `Closes #123` when merging will complete the issue.
 - Run `bash scripts/check.sh`, or the equivalent Gradle command in the README. Report checks you could not run and why.
-- For repository configuration changes, also run `nix develop .#repository --command bash scripts/check-repository.sh`.
+- For repository configuration changes, also run `nix develop .#repository --command bash scripts/check-repository.sh`. See the [maintenance guide](.github/SETUP.md) for workflow and runner behavior.
 - Include screenshots for visible UI changes and update affected wiki guidance or diagrams.
 - Request at least one teammate's review. Human review remains required when AI review is added.
 - Resolve feedback and get a passing `CI ready` status before merging. It requires Repository checks, Pre-commit checks, and Android checks to succeed. Use squash merge for a concise main-branch history.

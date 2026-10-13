@@ -42,23 +42,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Expose Nix tools to caching actions
-        run: nix develop .#hooks --no-update-lock-file --command bash scripts/setup-ci-toolchain.sh
-      - name: Compute hook cache fingerprint
-        id: hook-cache
-        # Avoid hashFiles(), which requires the runner's bundled Node 20.
-        run: |
-          fingerprint="$(sha256sum flake.lock flake.nix .pre-commit-config.yaml | sha256sum)"
-          printf 'hash=%s\n' "${fingerprint%% *}" >> "$GITHUB_OUTPUT"
-      - name: Cache hook environments
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ runner.temp }}/pre-commit
-          # Hook virtual environments contain absolute paths and Nix references.
-          key: pre-commit-${{ runner.os }}-${{ runner.arch }}-${{ runner.name }}-${{ steps.hook-cache.outputs.hash }}
-      - name: Run shared hooks
+      - name: Check file syntax, conflicts, size, and secrets
         env:
-          PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit
           BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_REF: ${{ github.event.pull_request.head.sha || github.sha }}
         run: nix develop .#hooks --no-update-lock-file --command bash scripts/check-hooks.sh
@@ -126,6 +111,32 @@ jobs:
             echo 'CI is not ready: every verification job must succeed.' >&2
             exit 1
           fi
+
+  publish:
+    name: Publish beta APK
+    needs: [ready]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Download the verified APK
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: app-debug.apk
+          path: ${{ runner.temp }}/beta-apk-${{ github.run_id }}-${{ github.run_attempt }}
+          skip-decompress: true
+      - name: Update beta prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK_PATH: ${{ runner.temp }}/beta-apk-${{ github.run_id }}-${{ github.run_attempt }}/app-debug.apk
+        run: nix develop .#repository --no-update-lock-file --command bash scripts/publish-apk.sh "$APK_PATH"
 
   # AI review is pending provider selection. Add an independent advisory job
   # here when configured; do not replace the Android checks or human review.

@@ -1,10 +1,394 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Cooperative course/test accounts share application state. Device-auth wiring is pending.
-    // Domain ownership and coordinated writes are enforced by repository operations.
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+    function signed() { return request.auth != null; }
+    function account(id) { return get(/databases/$(database)/documents/accounts/$(id)).data; }
+    function active() { return signed() && account(request.auth.uid).removal == null; }
+    function role(name) { return active() && name in account(request.auth.uid).roles; }
+    function admin() { return role('ADMIN'); }
+    function site(id) { return get(/databases/$(database)/documents/campsites/$(id)).data; }
+    function lottery(id) { return get(/databases/$(database)/documents/lotteries/$(id)).data; }
+    function ownsSite(id) { return role('OWNER') && site(id).ownerId == request.auth.uid; }
+    function ownsLottery(id) { return role('OWNER') && lottery(id).ownerId == request.auth.uid; }
+    function changes(fields) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields); }
+    function pair(a, b) { return string(a.size()) + ':' + a + string(b.size()) + ':' + b; }
+    function triple(a, b, c) { return pair(a, b) + string(c.size()) + ':' + c; }
+    function day(value) {
+      let p = value.split('-');
+      return timestamp.date(int(p[0]), int(p[1]), int(p[2]));
     }
+    function removalActor(id) {
+      return signed() && account(id).removal != null && account(id).removal.actorId == request.auth.uid;
+    }
+    function registrationOpen(id) {
+      let l = lottery(id);
+      return l.publishedAt != null && l.cancellation == null && l.drawnAt == null
+        && request.time >= l.registrationOpensAt && request.time < l.registrationClosesAt;
+    }
+    function bookingOpen(id) {
+      let l = lottery(id);
+      return l.publishedAt != null && l.cancellation == null && l.drawnAt != null
+        && request.time >= l.bookingOpensAt && request.time < l.bookingClosesAt;
+    }
+    function drawOperator(id) { return ownsLottery(id) || admin(); }
+    function canDraw(id) {
+      return (drawOperator(id) || (removalActor(lottery(id).ownerId) && exists(/databases/$(database)/documents/_draws/$(id))))
+        && lottery(id).publishedAt != null && lottery(id).cancellation == null
+        && lottery(id).drawnAt == null && request.time >= lottery(id).registrationClosesAt;
+    }
+    function participant(r) {
+      return signed() && (r.entrantId == request.auth.uid || ownsSite(r.campsiteId));
+    }
+    function canCancel(r) {
+      return (active() && participant(r)) || admin() || removalActor(r.entrantId)
+        || (signed() && site(r.campsiteId).removal != null && site(r.campsiteId).removal.actorId == request.auth.uid);
+    }
+    function imageOwner(id) {
+      return signed() && (id == 'account_' + request.auth.uid
+        || (id.matches('campsite_.+') && ownsSite(id.replace('^campsite_', ''))));
+    }
+    function removeImage(id) {
+      return imageOwner(id) || admin()
+        || (id.matches('account_.+') && removalActor(id.replace('^account_', '')))
+        || (signed() && id.matches('campsite_.+') && site(id.replace('^campsite_', '')).removal != null
+          && site(id.replace('^campsite_', '')).removal.actorId == request.auth.uid);
+    }
+    function processEvent(e) {
+      return admin() || (active() && e.senderId == request.auth.uid)
+        || (e.subject.type == 'LOTTERY' && ownsLottery(e.subject.id))
+        || (e.subject.type == 'RESERVATION' && canCancel(get(/databases/$(database)/documents/reservations/$(e.subject.id)).data))
+        || (e.subject.type == 'MESSAGE' && participant(get(/databases/$(database)/documents/reservations/$(get(
+          /databases/$(database)/documents/messages/$(e.subject.id)).data.reservationId)).data));
+    }
+
+    match /accounts/{id} {
+      allow read: if signed();
+      allow create: if signed() && id == request.auth.uid && request.resource.data.roles == ['ENTRANT']
+        && request.resource.data.removal == null && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.createdAt is timestamp
+        && request.resource.data.keys().hasOnly(['name', 'email', 'phone', 'roles', 'preferences', 'settings', 'createdAt', 'removal']);
+      allow update: if (active() && id == request.auth.uid && resource.data.removal == null
+          && changes(['name', 'email', 'phone', 'preferences', 'settings', 'roles'])
+          && request.resource.data.name is string && request.resource.data.name.size() > 0
+          && (request.resource.data.roles == resource.data.roles
+            || request.resource.data.roles.toSet() == resource.data.roles.toSet().union(['OWNER'].toSet())))
+        || (signed() && (id == request.auth.uid || admin())
+          && changes(['name', 'email', 'phone', 'roles', 'preferences', 'settings', 'removal'])
+          && request.resource.data.removal is map && request.resource.data.removal.at is timestamp
+          && (resource.data.removal == null ? request.resource.data.removal.actorId == request.auth.uid
+            : request.resource.data.removal == resource.data.removal)
+          && request.resource.data.name == '' && request.resource.data.email == null && request.resource.data.phone == null
+          && request.resource.data.roles == [] && request.resource.data.preferences == {'tags': [], 'amenities': []}
+          && request.resource.data.settings.notificationsEnabled == false);
+      match /devices/{device} {
+        allow read: if signed() && (id == request.auth.uid || admin());
+        allow create, update: if active() && id == request.auth.uid
+          && request.resource.data.keys().hasOnly(['fcmToken', 'updatedAt'])
+          && request.resource.data.fcmToken is string && request.resource.data.updatedAt is timestamp;
+        allow delete: if signed() && (id == request.auth.uid || admin() || removalActor(id));
+      }
+      match /inbox/{eventId} {
+        function e() { return get(/databases/$(database)/documents/notifications/$(eventId)).data; }
+        function job() { return get(/databases/$(database)/documents/_notificationDeliveries/$(eventId)).data; }
+        allow read: if signed() && (id == request.auth.uid || admin() || (id in job().recipientIds && processEvent(e())));
+        allow create: if signed() && request.resource.data == {'readAt': null}
+          && id in job().recipientIds && processEvent(e())
+          && (job().waitForDraw == null || lottery(job().waitForDraw).drawnAt != null)
+          && (e().type != 'OWNER_ANNOUNCEMENT'
+            || get(/databases/$(database)/documents/lotteries/$(e().subject.id)/entries/$(id)).data.state != 'WITHDRAWN');
+        allow update: if active() && id == request.auth.uid && changes(['readAt'])
+          && resource.data.readAt == null && request.resource.data.readAt is timestamp;
+      }
+    }
+
+    match /campsites/{id} {
+      allow get: if signed() && (resource == null || resource.data.publishedAt != null || resource.data.ownerId == request.auth.uid || admin());
+      allow list: if signed() && (resource.data.publishedAt != null || resource.data.ownerId == request.auth.uid || admin());
+      allow create: if role('OWNER') && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.removal == null && request.resource.data.publishedAt == null
+        && request.resource.data.maxGuests is int && request.resource.data.maxGuests > 0
+        && request.resource.data.nightlyPriceCents is int && request.resource.data.nightlyPriceCents >= 0;
+      allow update: if (ownsSite(id) && resource.data.removal == null
+          && changes(['name', 'description', 'location', 'locationLabel', 'timeZone', 'maxGuests', 'amenities', 'tags', 'nightlyPriceCents', 'rules', 'publishedAt'])
+          && request.resource.data.maxGuests is int && request.resource.data.maxGuests > 0
+          && request.resource.data.nightlyPriceCents is int && request.resource.data.nightlyPriceCents >= 0
+          && (resource.data.publishedAt == null || request.resource.data.publishedAt == resource.data.publishedAt))
+        || ((ownsSite(id) || admin() || removalActor(resource.data.ownerId)) && changes(['removal'])
+          && request.resource.data.removal is map
+          && (resource.data.removal == null
+            ? (request.resource.data.removal.actorId == request.auth.uid || request.resource.data.removal == account(resource.data.ownerId).removal)
+            : request.resource.data.removal == resource.data.removal));
+      match /calendar/{night} {
+        function claim() {
+          let rid = request.resource.data.reservationId;
+          let r = getAfter(/databases/$(database)/documents/reservations/$(rid)).data;
+          return role('ENTRANT') && r.entrantId == request.auth.uid && r.campsiteId == id && r.cancellation == null
+            && resource.data.isOffered && resource.data.reservationId == null
+            && !exists(/databases/$(database)/documents/reservations/$(rid))
+            && night >= r.checkInDate && night < r.checkOutDate
+            && night in get(/databases/$(database)/documents/lotteries/$(r.lotteryId)/offers/$(id)).data.nights;
+        }
+        function release() {
+          let rid = resource.data.reservationId;
+          let r = get(/databases/$(database)/documents/reservations/$(rid)).data;
+          return canCancel(r) && r.cancellation == null && request.resource.data.reservationId == null
+            && getAfter(/databases/$(database)/documents/reservations/$(rid)).data.cancellation != null;
+        }
+        allow read: if signed() && (site(id).publishedAt != null || ownsSite(id) || admin());
+        allow create: if ownsSite(id) && site(id).removal == null
+          && request.resource.data.keys().hasOnly(['isOffered', 'reservationId'])
+          && request.resource.data.isOffered is bool && request.resource.data.reservationId == null;
+        allow update: if (ownsSite(id) && site(id).removal == null && changes(['isOffered'])
+          && request.resource.data.isOffered is bool && (request.resource.data.isOffered || resource.data.reservationId == null))
+          || (changes(['reservationId']) && (claim() || release()));
+      }
+      match /reviews/{author} {
+        allow read: if signed();
+        allow create, update: if role('ENTRANT') && author == request.auth.uid
+          && site(id).publishedAt != null && site(id).removal == null
+          && request.resource.data.keys().hasOnly(['rating', 'body', 'createdAt', 'updatedAt'])
+          && request.resource.data.rating is int && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+          && (resource == null || request.resource.data.createdAt == resource.data.createdAt);
+        match /replies/{reply} {
+          allow read: if signed();
+          allow create: if active() && request.resource.data.authorId == request.auth.uid
+            && request.resource.data.keys().hasOnly(['authorId', 'parentReplyId', 'body', 'createdAt'])
+            && request.resource.data.body is string && request.resource.data.body.size() > 0
+            && exists(/databases/$(database)/documents/campsites/$(id)/reviews/$(author))
+            && (request.resource.data.parentReplyId == null || exists(
+              /databases/$(database)/documents/campsites/$(id)/reviews/$(author)/replies/$(request.resource.data.parentReplyId)));
+        }
+        match /reactions/{reactor} {
+          allow read: if signed();
+          allow create, update: if active() && reactor == request.auth.uid
+            && request.resource.data.keys().hasOnly(['type']) && request.resource.data.type in ['LIKE', 'HELPFUL']
+            && exists(/databases/$(database)/documents/campsites/$(id)/reviews/$(author));
+          allow delete: if active() && reactor == request.auth.uid;
+        }
+      }
+    }
+
+    match /lotteries/{id} {
+      function config(d) {
+        return d.registrationOpensAt < d.registrationClosesAt && d.registrationClosesAt <= d.bookingOpensAt && d.bookingOpensAt < d.bookingClosesAt
+          && d.winnerCount is int && d.winnerCount > 0 && d.waitingCount is int && d.waitingCount >= 0
+          && (d.waitlistCapacity == null || (d.waitlistCapacity is int && d.waitlistCapacity > 0));
+      }
+      function membership() {
+        let after = getAfter(/databases/$(database)/documents/lotteries/$(id)/entries/$(request.auth.uid)).data;
+        return role('ENTRANT') && registrationOpen(id) && changes(['waitingCount'])
+          && ((after.state == 'WAITING'
+              && (!exists(/databases/$(database)/documents/lotteries/$(id)/entries/$(request.auth.uid))
+                || get(/databases/$(database)/documents/lotteries/$(id)/entries/$(request.auth.uid)).data.state == 'WITHDRAWN')
+              && request.resource.data.waitingCount == resource.data.waitingCount + 1)
+            || (after.state == 'WITHDRAWN'
+              && get(/databases/$(database)/documents/lotteries/$(id)/entries/$(request.auth.uid)).data.state == 'WAITING'
+              && request.resource.data.waitingCount == resource.data.waitingCount - 1))
+          && (resource.data.waitlistCapacity == null || request.resource.data.waitingCount <= resource.data.waitlistCapacity);
+      }
+      allow get: if signed() && (resource == null || resource.data.publishedAt != null || resource.data.ownerId == request.auth.uid || admin());
+      allow list: if signed() && (resource.data.publishedAt != null || resource.data.ownerId == request.auth.uid || admin());
+      allow create: if role('OWNER') && request.resource.data.ownerId == request.auth.uid && config(request.resource.data)
+        && request.resource.data.waitingCount == 0 && request.resource.data.publishedAt == null
+        && request.resource.data.drawnAt == null && request.resource.data.cancellation == null;
+      allow update: if config(request.resource.data) && (
+          (ownsLottery(id) && resource.data.cancellation == null
+            && changes(['title', 'description', 'registrationOpensAt', 'registrationClosesAt', 'bookingOpensAt', 'bookingClosesAt', 'winnerCount', 'waitlistCapacity', 'publishedAt', '_revision'])
+            && ((resource.data.publishedAt == null || request.time < resource.data.registrationOpensAt) || changes(['title', 'description', '_revision']))
+            && (resource.data.publishedAt == null || request.resource.data.publishedAt == resource.data.publishedAt))
+          || (changes(['waitingCount']) && membership())
+          || (changes(['waitingCount']) && canDraw(id) && request.resource.data.waitingCount in [resource.data.waitingCount, resource.data.waitingCount - 1])
+          || (changes(['drawnAt']) && canDraw(id) && resource.data.waitingCount == 0
+            && exists(/databases/$(database)/documents/_draws/$(id)) && request.resource.data.drawnAt is timestamp)
+          || (admin() && changes(['waitingCount']) && request.resource.data.waitingCount == resource.data.waitingCount - 1)
+          || (changes(['waitingCount']) && removalActor(request.auth.uid)
+            && request.time < resource.data.registrationClosesAt
+            && get(/databases/$(database)/documents/lotteries/$(id)/entries/$(request.auth.uid)).data.state == 'WAITING'
+            && getAfter(/databases/$(database)/documents/lotteries/$(id)/entries/$(request.auth.uid)).data.state == 'WITHDRAWN'
+            && request.resource.data.waitingCount == resource.data.waitingCount - 1)
+          || ((drawOperator(id) || removalActor(resource.data.ownerId)) && changes(['cancellation'])
+            && resource.data.cancellation == null && request.resource.data.cancellation is map
+            && (request.resource.data.cancellation.actorId == request.auth.uid || admin())
+            && (!exists(/databases/$(database)/documents/_draws/$(id)) || resource.data.drawnAt != null))
+        );
+      match /offers/{campsite} {
+        allow read: if signed() && (lottery(id).publishedAt != null || ownsLottery(id) || admin() || removalActor(lottery(id).ownerId));
+        allow create, update: if ownsLottery(id) && lottery(id).cancellation == null
+          && (lottery(id).publishedAt == null || request.time < lottery(id).registrationOpensAt)
+          && site(campsite).ownerId == request.auth.uid && site(campsite).removal == null
+          && getAfter(/databases/$(database)/documents/lotteries/$(id)).data.get('_revision', 0) == lottery(id).get('_revision', 0) + 1
+          && request.resource.data.keys().hasOnly(['nights']) && request.resource.data.nights is list && request.resource.data.nights.size() > 0;
+        allow delete: if ownsLottery(id) && lottery(id).cancellation == null
+          && (lottery(id).publishedAt == null || request.time < lottery(id).registrationOpensAt)
+          && getAfter(/databases/$(database)/documents/lotteries/$(id)).data.get('_revision', 0) == lottery(id).get('_revision', 0) + 1;
+      }
+      match /entries/{entrant} {
+        allow read: if signed() && (entrant == request.auth.uid || ownsLottery(id) || admin() || removalActor(lottery(id).ownerId));
+        allow create: if role('ENTRANT') && entrant == request.auth.uid && registrationOpen(id)
+          && request.resource.data.accountId == entrant && request.resource.data.state == 'WAITING'
+          && getAfter(/databases/$(database)/documents/lotteries/$(id)).data.waitingCount == lottery(id).waitingCount + 1;
+        allow update: if request.resource.data.accountId == resource.data.accountId && (
+            (role('ENTRANT') && entrant == request.auth.uid && registrationOpen(id)
+              && resource.data.state in ['WAITING', 'WITHDRAWN'] && request.resource.data.state in ['WAITING', 'WITHDRAWN']
+              && request.resource.data.state != resource.data.state && changes(['state', 'joinedAt', 'stateChangedAt'])
+              && getAfter(/databases/$(database)/documents/lotteries/$(id)).data.waitingCount == lottery(id).waitingCount + (request.resource.data.state == 'WAITING' ? 1 : -1))
+            || (canDraw(id) && exists(/databases/$(database)/documents/_draws/$(id)) && resource.data.state == 'WAITING'
+              && request.resource.data.state in ['LOST', 'OFFERED'] && changes(['state', 'stateChangedAt'])
+              && getAfter(/databases/$(database)/documents/lotteries/$(id)).data.waitingCount == lottery(id).waitingCount - 1)
+            || (role('ENTRANT') && entrant == request.auth.uid && bookingOpen(id) && resource.data.state == 'OFFERED'
+              && request.resource.data.state == 'DECLINED' && changes(['state', 'stateChangedAt'])
+              && !exists(/databases/$(database)/documents/reservations/$(pair(id, entrant))))
+            || ((admin() || removalActor(entrant)) && account(entrant).removal != null && request.time < lottery(id).registrationClosesAt
+              && resource.data.state == 'WAITING' && request.resource.data.state == 'WITHDRAWN' && changes(['state', 'stateChangedAt'])
+              && getAfter(/databases/$(database)/documents/lotteries/$(id)).data.waitingCount == lottery(id).waitingCount - 1)
+          );
+      }
+    }
+    match /{parent=**}/entries/{entry} { allow read: if signed() && (resource.data.accountId == request.auth.uid || admin()); }
+    match /{parent=**}/offers/{offer} { allow read: if admin(); }
+
+    match /reservations/{id} {
+      function cancellationActor(r, c) {
+        return (c.actorId == request.auth.uid && (
+            (c.initiatedAs == 'ENTRANT' && r.entrantId == request.auth.uid)
+            || (c.initiatedAs == 'OWNER' && site(r.campsiteId).ownerId == request.auth.uid)
+            || (c.initiatedAs == 'ADMIN' && admin())))
+          || (admin() && ((account(r.entrantId).removal != null && c.actorId == account(r.entrantId).removal.actorId)
+            || (site(r.campsiteId).removal != null && c.actorId == site(r.campsiteId).removal.actorId)));
+      }
+      function booking(r) {
+        let l = lottery(r.lotteryId);
+        let s = site(r.campsiteId);
+        return role('ENTRANT') && r.entrantId == request.auth.uid && id == pair(r.lotteryId, r.entrantId) && bookingOpen(r.lotteryId)
+          && get(/databases/$(database)/documents/lotteries/$(r.lotteryId)/entries/$(request.auth.uid)).data.state == 'OFFERED'
+          && s.publishedAt != null && s.removal == null && s.ownerId == l.ownerId
+          && account(l.ownerId).removal == null && 'OWNER' in account(l.ownerId).roles
+          && r.cancellation == null && r.guestCount is int && r.guestCount > 0 && r.guestCount <= s.maxGuests
+          && r.checkInDate.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}') && day(r.checkOutDate) > day(r.checkInDate)
+          && r.bookedCampsite == {'name': s.name, 'locationLabel': s.locationLabel, 'location': s.location, 'timeZone': s.timeZone}
+          && r.acceptedTerms.rules == s.rules && r.acceptedTerms.cancellationPolicyVersion == 'full-refund-v1'
+          && getAfter(/databases/$(database)/documents/campsites/$(r.campsiteId)/calendar/$(r.checkInDate)).data.reservationId == id
+          && getAfter(/databases/$(database)/documents/payments/$(id)).data.refundedAt == null;
+      }
+      allow get: if signed() && (resource == null || participant(resource.data) || admin());
+      allow list: if participant(resource.data) || admin();
+      allow create: if booking(request.resource.data);
+      allow update: if canCancel(resource.data) && resource.data.cancellation == null && changes(['cancellation'])
+        && request.resource.data.cancellation is map && request.resource.data.cancellation.at is timestamp
+        && request.resource.data.cancellation.initiatedAs in ['ENTRANT', 'OWNER', 'ADMIN']
+        && cancellationActor(resource.data, request.resource.data.cancellation)
+        && getAfter(/databases/$(database)/documents/payments/$(id)).data.refundedAt != null;
+    }
+    match /payments/{id} {
+      allow get: if signed() && (resource == null || participant(get(/databases/$(database)/documents/reservations/$(id)).data) || admin());
+      allow list: if admin();
+      allow create: if role('ENTRANT') && !exists(/databases/$(database)/documents/reservations/$(id))
+        && getAfter(/databases/$(database)/documents/reservations/$(id)).data.entrantId == request.auth.uid
+        && request.resource.data.refundedAt == null && request.resource.data.amountCents is int
+        && request.resource.data.amountCents == site(getAfter(/databases/$(database)/documents/reservations/$(id)).data.campsiteId).nightlyPriceCents
+          * (day(getAfter(/databases/$(database)/documents/reservations/$(id)).data.checkOutDate) - day(getAfter(/databases/$(database)/documents/reservations/$(id)).data.checkInDate)).seconds() / 86400;
+      allow update: if canCancel(get(/databases/$(database)/documents/reservations/$(id)).data)
+        && resource.data.refundedAt == null && changes(['refundedAt']) && request.resource.data.refundedAt is timestamp
+        && getAfter(/databases/$(database)/documents/reservations/$(id)).data.cancellation != null;
+    }
+    match /messages/{id} {
+      function r() { return get(/databases/$(database)/documents/reservations/$(resource.data.reservationId)).data; }
+      allow read: if participant(r()) || admin();
+      allow create: if active() && request.resource.data.senderId == request.auth.uid
+        && participant(get(/databases/$(database)/documents/reservations/$(request.resource.data.reservationId)).data)
+        && request.resource.data.keys().hasOnly(['reservationId', 'senderId', 'body', 'createdAt', 'readAt'])
+        && request.resource.data.body is string && request.resource.data.body.size() > 0 && request.resource.data.readAt == null;
+      allow update: if active() && participant(r()) && resource.data.senderId != request.auth.uid
+        && resource.data.readAt == null && changes(['readAt']) && request.resource.data.readAt is timestamp;
+    }
+    match /notifications/{id} {
+      function validEvent(e) {
+        let job = getAfter(/databases/$(database)/documents/_notificationDeliveries/$(id)).data;
+        return e.keys().hasOnly(['senderId', 'type', 'subject', 'announcement', 'createdAt']) && (
+          (e.type == 'OWNER_ANNOUNCEMENT' && e.senderId == request.auth.uid && e.subject.type == 'LOTTERY' && ownsLottery(e.subject.id) && e.announcement is map)
+          || (e.type in ['LOTTERY_WON', 'LOTTERY_LOST'] && e.senderId == null && e.subject.type == 'LOTTERY' && canDraw(e.subject.id)
+            && job.recipientIds.size() == 1 && id == triple(e.type, e.subject.id, job.recipientIds[0])
+            && getAfter(/databases/$(database)/documents/lotteries/$(e.subject.id)/entries/$(job.recipientIds[0])).data.state == (e.type == 'LOTTERY_WON' ? 'OFFERED' : 'LOST'))
+          || (e.type in ['RESERVATION_CONFIRMED', 'RESERVATION_CANCELLED'] && e.senderId == null && e.subject.type == 'RESERVATION' && id == pair(e.type, e.subject.id)
+            && canCancel(getAfter(/databases/$(database)/documents/reservations/$(e.subject.id)).data)
+            && (e.type == 'RESERVATION_CONFIRMED' ? !exists(/databases/$(database)/documents/reservations/$(e.subject.id))
+              : (get(/databases/$(database)/documents/reservations/$(e.subject.id)).data.cancellation == null
+                && getAfter(/databases/$(database)/documents/reservations/$(e.subject.id)).data.cancellation != null)))
+          || (e.type == 'NEW_MESSAGE' && e.senderId == request.auth.uid && e.subject.type == 'MESSAGE' && id == pair(e.type, e.subject.id)
+            && getAfter(/databases/$(database)/documents/messages/$(e.subject.id)).data.senderId == request.auth.uid)
+        );
+      }
+      allow read: if signed() && (admin() || resource.data.senderId == request.auth.uid
+        || exists(/databases/$(database)/documents/accounts/$(request.auth.uid)/inbox/$(id)) || processEvent(resource.data));
+      allow create: if signed() && validEvent(request.resource.data);
+      allow update: if request.resource.data == resource.data && processEvent(resource.data);
+    }
+    match /_notificationDeliveries/{id} {
+      function e() { return get(/databases/$(database)/documents/notifications/$(id)).data; }
+      function recipientsMatch() {
+        let event = getAfter(/databases/$(database)/documents/notifications/$(id)).data;
+        return (event.type in ['LOTTERY_WON', 'LOTTERY_LOST'] && request.resource.data.recipientIds.size() == 1
+            && request.resource.data.waitForDraw == event.subject.id)
+          || (event.type == 'OWNER_ANNOUNCEMENT' && request.resource.data.waitForDraw == null)
+          || (event.subject.type == 'RESERVATION' && request.resource.data.waitForDraw == null
+            && request.resource.data.recipientIds == [getAfter(/databases/$(database)/documents/reservations/$(event.subject.id)).data.entrantId])
+          || (event.subject.type == 'MESSAGE' && request.resource.data.waitForDraw == null
+            && messageRecipient(event));
+      }
+      function messageRecipient(event) {
+        let message = getAfter(/databases/$(database)/documents/messages/$(event.subject.id)).data;
+        let r = get(/databases/$(database)/documents/reservations/$(message.reservationId)).data;
+        return request.resource.data.recipientIds == [message.senderId == r.entrantId ? site(r.campsiteId).ownerId : r.entrantId];
+      }
+      allow read: if processEvent(e());
+      allow create: if signed() && request.resource.data.keys().hasOnly(['recipientIds', 'waitForDraw'])
+        && request.resource.data.recipientIds is list && !exists(/databases/$(database)/documents/notifications/$(id))
+        && getAfter(/databases/$(database)/documents/notifications/$(id)).data.createdAt is timestamp && recipientsMatch();
+      allow delete: if processEvent(e());
+    }
+    match /_draws/{id} {
+      allow read: if drawOperator(id) || removalActor(lottery(id).ownerId);
+      allow create: if canDraw(id) && request.resource.data.keys().hasOnly(['seed']) && request.resource.data.seed is string;
+    }
+    match /images/{id} {
+      allow get: if signed() && (resource == null || id.matches('account_.+') || admin()
+        || (id.matches('campsite_.+') && (site(id.replace('^campsite_', '')).publishedAt != null || ownsSite(id.replace('^campsite_', '')))));
+      allow list: if admin();
+      allow create, update: if active() && imageOwner(id) && request.resource.data.keys().hasOnly(['blobId', 'uploadedAt'])
+        && (id == 'account_' + request.auth.uid || site(id.replace('^campsite_', '')).removal == null)
+        && get(/databases/$(database)/documents/_imageUploads/$(request.resource.data.blobId)).data.attachmentId == id
+        && get(/databases/$(database)/documents/_imageUploads/$(request.resource.data.blobId)).data.abandoned == false
+        && get(/databases/$(database)/documents/_imageUploads/$(request.resource.data.blobId)).data.uploadFinished == true
+        && get(/databases/$(database)/documents/_imageUploads/$(request.resource.data.blobId)).data.expiresAt > request.time;
+      allow delete: if removeImage(id);
+    }
+    match /_imageUploads/{blob} {
+      allow get: if signed() && (resource == null || admin() || removeImage(resource.data.attachmentId));
+      allow list: if admin() || removeImage(resource.data.attachmentId);
+      allow create: if active() && imageOwner(request.resource.data.attachmentId)
+        && request.resource.data.keys().hasOnly(['attachmentId', 'expiresAt', 'abandoned', 'uploadFinished'])
+        && request.resource.data.expiresAt > request.time && request.resource.data.expiresAt <= request.time + duration.value(16, 'm')
+        && request.resource.data.abandoned == false && request.resource.data.uploadFinished == false;
+      allow update: if (imageOwner(resource.data.attachmentId) && changes(['uploadFinished']) && request.resource.data.uploadFinished == true)
+        || (removeImage(resource.data.attachmentId) && changes(['abandoned']) && request.resource.data.abandoned == true && resource.data.expiresAt <= request.time);
+      allow delete: if removeImage(resource.data.attachmentId);
+    }
+    match /_storageCleanup/{blob} {
+      allow get: if signed() && (resource == null || admin() || removeImage(resource.data.attachmentId));
+      allow list: if admin() || removeImage(resource.data.attachmentId);
+      allow delete: if admin() || (resource != null && removeImage(resource.data.attachmentId))
+        || (resource == null && removeImage(get(/databases/$(database)/documents/_imageUploads/$(blob)).data.attachmentId));
+      allow create: if removeImage(request.resource.data.attachmentId)
+        && request.resource.data.keys().hasOnly(['queuedAt', 'attachmentId'])
+        && get(/databases/$(database)/documents/images/$(request.resource.data.attachmentId)).data.blobId == blob;
+    }
+    match /_removals/{id} {
+      allow read, delete: if admin() || (signed() && resource.data.actorId == request.auth.uid);
+      allow create, update: if request.resource.data.at is timestamp
+        && (admin() || (signed() && request.resource.data.actorId == request.auth.uid))
+        && ((id.matches('account_.+') && getAfter(/databases/$(database)/documents/accounts/$(id.replace('^account_', ''))).data.removal == request.resource.data)
+          || (id.matches('campsite_.+') && getAfter(/databases/$(database)/documents/campsites/$(id.replace('^campsite_', ''))).data.removal == request.resource.data));
+    }
+    // No client access to unknown collections or migration records.
   }
 }

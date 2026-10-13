@@ -35,6 +35,14 @@
         postCheck = "";
       });
 
+      # Run CI's read-only hooks from Nix rather than cached pip environments.
+      # The locked package is pre-commit-hooks 6.0.0, matching the local hooks.
+      checkPython = pkgs.python3.withPackages (ps: [
+        ps.pre-commit-hooks
+        ps.identify
+        ps.pyyaml
+      ]);
+
       android = pkgs.androidenv.composeAndroidPackages {
         platformVersions = [ "37.0" ];
         buildToolsVersions = [ "36.0.0" "37.0.0" ];
@@ -67,6 +75,7 @@
           packages = [
             pkgs.jdk25
             pkgs.firebase-tools
+            pkgs.nodejs_24
             android.androidsdk
             pkgs.bash
             pkgs.git
@@ -78,7 +87,7 @@
             pkgs.actionlint
             pkgs.shellcheck
             preCommit
-            pkgs.python3
+            checkPython
             pkgs.go
             pkgs.gitleaks
             ktlint
@@ -105,7 +114,7 @@
             pkgs.gnutar
             pkgs.zstd
             preCommit
-            pkgs.python3
+            checkPython
             pkgs.go
             pkgs.jdk25
             pkgs.gitleaks

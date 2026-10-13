@@ -1,6 +1,6 @@
 # Persistence contract
 
-Persistence contract implemented by Android domain models, explicit document codecs, and repository operations; cloud binding and application integration remain pending. Covers the active [requirements](../doc/00_requirements.md), Q&A, and listed WOW features. Broader architecture and setup guidance belongs in the team Wiki.
+This contract defines the Firestore documents, Storage objects, and coordinated repository operations for the [application requirements](../doc/00_requirements.md). Android domain models and document codecs follow these definitions. Broader architecture guidance belongs in the team Wiki; integration instructions and pending work are listed in [Firebase setup](README.md).
 
 ## Conventions
 
@@ -240,7 +240,7 @@ _draws/{lotteryId}: { seed: String }
 _notificationDeliveries/{notificationId}: {
   recipientIds: List<AccountId>, waitForDraw: LotteryId?
 }
-_storageCleanup/{blobId}: { queuedAt: Timestamp }
+_storageCleanup/{blobId}: { queuedAt: Timestamp, attachmentId: String }
 _imageUploads/{blobId}: {
   attachmentId: String, expiresAt: Timestamp,
   abandoned: Boolean, uploadFinished: Boolean
@@ -264,5 +264,3 @@ _migrations/{migrationId}
 Numbered migration scripts are safe to rerun and record completion only after success. They run through tooling, never automatically on phone startup. Prefer updated fixtures/reseeding for disposable development data; no per-document schema version initially.
 
 Do not persist QR graphics/payloads, CSV exports, average ratings, reaction counts, match scores, carousel ordering, temporary filters/device location, selected UI role, derived lifecycle labels, or image caches. Reservation maps use booking snapshots; nearby maps use campsite coordinates; match scores use filters; carousels use preferences; accessibility uses account settings. Guidelines and versioned standard policy text ship with the app.
-
-Pending: UI/controller/platform integration, device authentication, OS/FCM push delivery, full emulator workflow tests, seed/migration tooling, and cloud project setup. Those are explicit integration placeholders, not simulated successes from persistence APIs.

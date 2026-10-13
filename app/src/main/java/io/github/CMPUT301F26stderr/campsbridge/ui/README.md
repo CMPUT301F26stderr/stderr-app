@@ -1,12 +1,12 @@
 # UI conventions
 
-Guidance for upcoming UI implementation. The table below records preferred approaches; it does not declare dependencies installed or integrations complete. Keep detailed designs and team guidance in the Wiki.
+Use these conventions when implementing UI features. Keep screen designs and storyboards in the team Wiki. Add the preferred dependencies below as their features are implemented.
+
+The visual intent, interaction patterns, and planned component families are defined in [DESIGNS.md](../../../../../../../../../docs/screens/DESIGNS.md). Palette and visual tokens remain pending design exploration; apply the agreed reference when replacing the starter theme and implementing screens.
 
 ## Dependency policy
 
 Prefer Jetpack and Android platform components. Use official Google SDKs for Firebase, maps, and scanning. Allow a small number of established libraries when they remove substantial infrastructure work.
-
-Jetpack does not include every Google SDK: Firebase, Google Maps, and Google Code Scanner are separate products. Official Google SDKs are not necessarily fully open source.
 
 | Feature | Preferred approach |
 | --- | --- |

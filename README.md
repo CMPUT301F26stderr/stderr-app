@@ -37,7 +37,7 @@ The checks run Android Lint, local unit tests, and a debug APK build. Device tes
 | `app/` | Android application, resources, and tests |
 | `.github/` | Issue and PR templates, review ownership, and Actions workflows |
 | `doc/` | Course reference documents and team roster |
-| `firebase/` | Reserved for future Firebase configuration and backend code |
+| `firebase/` | Persistence contract, Firestore/Storage rules, indexes, and emulator configuration |
 | `scripts/` | Shared development commands |
 | `gradle/` and root build files | Reproducible build configuration |
 
@@ -45,14 +45,10 @@ Detailed team documentation belongs in the wiki. Keep executable configuration, 
 
 ## Testing
 
-[![Build status](https://github.com/CMPUT301F26stderr/stderr-campsbridge/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/CMPUT301F26stderr/stderr-campsbridge/actions/workflows/ci.yml?query=branch%3Amain+event%3Apush)
+[![Build status](https://github.com/CMPUT301F26stderr/stderr-campsbridge/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/CMPUT301F26stderr/stderr-campsbridge/actions/workflows/ci.yml?query=branch%3Amain+event%3Apush) [![Download Last Success APK](https://img.shields.io/badge/Download-Latest%20APK-blue?logo=android)](https://github.com/CMPUT301F26stderr/stderr-campsbridge/releases/download/beta/app-debug.apk)
 
-Download a test APK:
+Use **Download Latest APK** above to download `app-debug.apk` from the rolling [beta prerelease](https://github.com/CMPUT301F26stderr/stderr-campsbridge/releases/tag/beta), without signing in to GitHub. CI updates it after all checks pass on `main`. Open the APK on your Android device to install it, and allow installation from the app you used to open the APK if Android prompts you. The build-status badge links to CI runs and check reports.
 
-1. Sign in to GitHub and open the build runs using the badge above.
-2. Select the latest successful run on `main`, then find **Artifacts** on its summary page.
-3. Download **app-debug.apk** and open it on your Android device to install it. Allow installation from the app you used to open the APK if Android prompts you.
-
-Build APKs are available for 14 days after each run. Detailed testing instructions will be added here as features become available.
+The beta download stays available until replaced by a newer verified build. Per-run APKs and check reports remain available as Actions artifacts for 14 days.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing. This project uses the [GNU GPL v3 license](LICENSE).

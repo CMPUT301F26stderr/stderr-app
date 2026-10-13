@@ -77,7 +77,11 @@ class FirebaseImageRepository(
             val task =
                 objectRef.putStream(
                     stream,
-                    StorageMetadata.Builder().setContentType(upload.contentType).build(),
+                    StorageMetadata
+                        .Builder()
+                        .setContentType(upload.contentType)
+                        .setCustomMetadata("attachmentId", DocumentKeys.attachment(target))
+                        .build(),
                 )
             try {
                 withTimeout(600_000) { task.await() }
@@ -119,7 +123,10 @@ class FirebaseImageRepository(
                     if (previous != null) {
                         tx.set(
                             db.collection("_storageCleanup").document(previous.blobId),
-                            mapOf("queuedAt" to clock.instant().stored()),
+                            mapOf(
+                                "queuedAt" to clock.instant().stored(),
+                                "attachmentId" to DocumentKeys.attachment(target),
+                            ),
                         )
                     }
                     previous
@@ -144,7 +151,10 @@ class FirebaseImageRepository(
                     tx.delete(ref)
                     tx.set(
                         db.collection("_storageCleanup").document(previous.blobId),
-                        mapOf("queuedAt" to clock.instant().stored()),
+                        mapOf(
+                            "queuedAt" to clock.instant().stored(),
+                            "attachmentId" to DocumentKeys.attachment(target),
+                        ),
                     )
                 }
                 previous

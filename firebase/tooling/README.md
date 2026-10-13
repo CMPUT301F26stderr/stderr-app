@@ -1,6 +1,6 @@
 # Persistence tooling
 
-TODO: Implement seed and numbered migration commands. No seed or migration runner exists yet.
+Seed and migration commands are not implemented. Use the following conventions when adding them:
 
 - Keep reusable development fixtures in `fixtures/` when seeding is implemented.
 - Default tooling to the Firebase emulators; require an explicit project for cloud writes.

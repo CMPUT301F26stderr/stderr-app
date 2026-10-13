@@ -1,0 +1,58 @@
+# Code boundaries and ownership
+
+These packages belong to the single Gradle module `:app`. The boundaries below are coding conventions; separate build modules do not enforce them. Ownership here refers to responsibility for code and state, not assignments to team members.
+
+## Package responsibilities
+
+| Package | Owns | Boundary |
+| --- | --- | --- |
+| `domain/` | Application models, enums, invariants, request types, failures, and repository interfaces, grouped by feature. | Uses ordinary Kotlin/JVM types and coroutines. No Firebase SDK types, Android UI, document paths, or dependency on `data/`. |
+| `data/` | Repository implementations, document codecs, queries, listeners, transactions, Storage operations, and durable persistence coordination. | Implements domain contracts and exposes application models. Firebase snapshots and serialization details stay here. |
+| `di/` | Dependency construction and wiring through `AppContainer`. | Supplies implementations through interfaces, including injected Firebase clients, clock, and randomness. Does not own screen behavior or business rules. |
+| `ui/` | Compose presentation, shared components, theme, and controllers/ViewModels. | Uses domain contracts through controllers. Does not access Firestore or Storage directly. |
+| `navigation/` | Destinations, route arguments, navigation graph, and route wiring. | Connects screens and controllers. Does not perform persistence operations or decide booking eligibility. |
+| `platform/` | Android integrations such as identity/auth, location, QR scanning/rendering, file sharing, and OS/push notifications. | Keeps platform-specific implementation details behind small integration interfaces or components. |
+
+At the repository root, `firebase/` owns the schema contract, rules, indexes, emulator configuration, and seed/migration tooling conventions. Android runtime persistence code belongs in `data/`. Collection and field definitions are documented in `firebase/SCHEMA.md`.
+
+## Dependencies and control flow
+
+```text
+User action -> Compose callback -> ViewModel -> repository operation -> Firebase
+UI state    <- Compose          <- ViewModel <- result or Flow       <- Firebase
+```
+
+- `domain/` does not depend on `data/`, UI, or Firebase.
+- `data/` depends on `domain/` and Firebase SDKs.
+- Controllers receive domain repository interfaces through constructor injection. Fake implementations can satisfy the same contracts for tests and isolated UI work.
+- `di/` knows concrete implementations and supplies dependencies to consumers. Navigation routes connect those dependencies to screens.
+- Screens receive state and callbacks. Reusable components do not construct repositories or acquire ViewModels.
+- Platform adapters keep Android-specific details out of application contracts. Identity/bootstrap setup belongs in application/platform wiring; controllers consume the resulting identity and services.
+
+ViewModels expose read-only state and explicit action methods. Use `Flow` for observed repository data and suspending functions for actions. Controllers translate results and failures into presentation state, preserve input after failures, and propagate coroutine cancellation. Report confirmed success only after the repository operation succeeds.
+
+## Domain and persistence ownership
+
+Pure invariants belong in `domain/`: for example, checkout must follow check-in, guest count must be positive, and night count derives from the date range. Rules requiring current shared state and coordinated writes belong in the repository implementation: for example, verifying a winning opportunity and claiming every requested night atomically.
+
+Feature folders indicate the primary owner of an operation, rather than restricting it to one collection:
+
+- **Booking** owns reservation creation/cancellation and the coordinated inventory, simulated payment, and notification writes.
+- **Lottery** owns membership, capacity changes, draws, winner outcomes, and lottery cancellation coordination.
+- **Images** owns attachment publication, Storage transfers, replacement, and retryable blob cleanup.
+- **Notifications** owns persisted events, inbox receipts, and resumable inbox delivery. Platform integration owns OS/push delivery.
+- **Moderation** owns account/campsite removal and coordinates the resulting persistence cleanup.
+
+A controller calls `bookings.reserve(request)` once. It must not separately create a reservation, charge a payment, claim nights, and send a notification: that sequence belongs to the repository operation. Transaction callbacks must avoid external side effects because Firestore can retry them. Storage and Firestore do not share a transaction, so image publication and cleanup require explicit retry coordination.
+
+Give each persisted fact one authoritative owner. Derive values such as QR images, fixed Storage paths, and night counts from their inputs. Preserve historical snapshots such as accepted booking terms when current editable data cannot reconstruct them. Document deliberate query copies and coordination metadata in the schema, including the operation responsible for maintaining them.
+
+Document codecs such as `ReservationDocument` translate between application models and Firestore fields. Screens and controllers do not perform this conversion. Avoid duplicate model layers or pass-through use cases unless concrete complexity or reuse justifies them.
+
+## Current implementation and pending work
+
+Domain contracts, Firestore/Storage repository implementations, codecs, and `AppContainer` are implemented. `AppContainer.resumePendingWork()` coordinates resumable persistence work; application wiring must schedule it after Firebase/auth initialization.
+
+Feature screens/controllers, navigation destinations, shared feature components, and platform integrations remain placeholders. The starter activity/theme are present. Live Firebase/auth setup, foreground scheduling, and OS/push delivery still require integration. Screen contracts and navigation will follow the agreed prototypes.
+
+When changing a repository contract or persisted field, update affected consumers, readers, writers, queries, fixtures, and relevant tests together. Record whether existing data requires compatibility handling, migration, or development reseeding.
