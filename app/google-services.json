@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "322264089633",
+    "project_id": "project-3bc1a00e-fb80-48ba-948",
+    "storage_bucket": "project-3bc1a00e-fb80-48ba-948.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:322264089633:android:02a60dfa6393bc1d3a8f60",
+        "android_client_info": {
+          "package_name": "io.github.CMPUT301F26stderr.campsbridge"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAJn1O80VJxQLra6oZu6Icmya_737DSAXU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

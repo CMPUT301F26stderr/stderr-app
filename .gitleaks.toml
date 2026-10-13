@@ -1,0 +1,12 @@
+[extend]
+useDefault = true
+
+# Firebase Android client API keys are public project identifiers, packaged in the APK.
+# Match only the Google API key field in the shared client configuration.
+[[allowlists]]
+description = "Public Firebase Android client API key"
+targetRules = ["gcp-api-key", "generic-api-key"]
+condition = "AND"
+paths = ['''^app/google-services\.json$''']
+regexTarget = "line"
+regexes = ['''^\s*"current_key"\s*:\s*"AIza[0-9A-Za-z_-]{35}"\s*,?\s*$''']
